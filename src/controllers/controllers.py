@@ -262,6 +262,7 @@ class Controller:
             plt.xlabel("Time (t)")
             plt.ylabel(workspace_joints[joint] + " Velocity Error")
 
+        plt.legend()
         print "Close the plot window to continue"
         plt.show()
 
@@ -308,6 +309,8 @@ class Controller:
         start_t = rospy.Time.now()
         r = rospy.Rate(rate)
 
+        # plot_robot_trajectory(path)
+        
         while not rospy.is_shutdown():
             # Find the time from start
             t = (rospy.Time.now() - start_t).to_sec()
@@ -346,7 +349,7 @@ class Controller:
             if current_index >= max_index:
                 self.stop_moving()
                 break
-
+        
         if log:
             self.plot_results(
                 times,
@@ -357,7 +360,7 @@ class Controller:
             )
         return True
 
-    def follow_ar_tag(self, tag, rate=200, timeout=None, log=False):
+    def follow_ar_tag_step(self, tag, limb, kin, num_way=5, rate=200, timeout=None, log=False):
         """
         takes in an AR tag number and follows it with the baxter's arm.  You 
         should look at execute_path() for inspiration on how to write this. 
@@ -382,7 +385,185 @@ class Controller:
         bool
             whether the controller completes the path or not
         """
-        raise NotImplementedError
+
+        # For plotting
+        if log:
+            times = list()
+            actual_positions = list()
+            actual_velocities = list()
+            target_positions = list()
+            target_velocities = list()
+
+        # For interpolation
+        max_index = len(path.joint_trajectory.points)-1
+        current_index = 0
+
+        # For timing
+        start_t = rospy.Time.now()
+        r = rospy.Rate(rate)
+
+        # plot_robot_trajectory(path)
+        step_fraction = 0.05
+        target_time = rate / 1000. # time in seconds
+        target_velocity = step_fraction / target_time
+        target_acceleration = 0.05
+
+        while not rospy.is_shutdown():
+            # Find the time from start
+            t = (rospy.Time.now() - start_t).to_sec()
+
+            # If the controller has timed out, stop moving and return false
+            if timeout is not None and t >= timeout:
+                # Set velocities to zero
+                self.stop_moving()
+                return False
+
+            current_position = get_joint_positions(self._limb)
+            current_velocity = get_joint_velocities(self._limb)
+
+            # Get the desired position, velocity, and effort
+            # (
+            #     target_position, 
+            #     target_velocity, 
+            #     target_acceleration, 
+            #     current_index
+            # ) = self.interpolate_path(path, t, current_index)
+
+            tag_pos = np.array(lookup_tag(tag)).reshape(-1)
+            current_workspace_position = np.array(kin.forward_position_kinematics()).reshape(-1)[:3]
+            direction = tag_pos - current_workspace_position
+            direction = direction / np.linalg.norm(direction)
+
+            target_position = current_position + step_fraction * direction
+            
+            # For plotting
+            if log:
+                times.append(t)
+                actual_positions.append(current_position)
+                actual_velocities.append(current_velocity)
+                target_positions.append(target_position)
+                target_velocities.append(target_velocity)
+
+            # Run controller
+            self.step_control(target_position, target_velocity, target_acceleration)
+
+            # Sleep for a bit (to let robot move)
+            r.sleep()
+
+            if current_index >= max_index:
+                self.stop_moving()
+                break
+        
+        if log:
+            self.plot_results(
+                times,
+                actual_positions, 
+                actual_velocities, 
+                target_positions, 
+                target_velocities
+            )
+        return True
+
+    def follow_ar_tag(self, tag, limb, kin, num_way=5, rate=200, timeout=None, log=False):
+        """
+        takes in an AR tag number and follows it with the baxter's arm.  You 
+        should look at execute_path() for inspiration on how to write this. 
+
+        Parameters
+        ----------
+        tag : int
+            which AR tag to use
+        rate : int
+            This specifies how many ms between loops.  It is important to
+            use a rate and not a regular while loop because you want the
+            loop to refresh at a constant rate, otherwise you would have to
+            tune your PD parameters if the loop runs slower / faster
+        timeout : int
+            If you want the controller to terminate after a certain number
+            of seconds, specify a timeout in seconds.
+        log : bool
+            whether or not to display a plot of the controller performance
+
+        Returns
+        -------
+        bool
+            whether the controller completes the path or not
+        """
+        # For plotting
+        if log:
+            times = list()
+            actual_positions = list()
+            actual_velocities = list()
+            target_positions = list()
+            target_velocities = list()
+
+        # For interpolation
+        max_index = len(path.joint_trajectory.points)-1
+        current_index = 0
+
+        # For timing
+        start_t = rospy.Time.now()
+        r = rospy.Rate(rate)
+
+        constant_velocity = 0.1
+
+        while not rospy.is_shutdown():
+            # Find the time from start
+            t = (rospy.Time.now() - start_t).to_sec()
+
+            # If the controller has timed out, stop moving and return false
+            if timeout is not None and t >= timeout:
+                # Set velocities to zero
+                self.stop_moving()
+                return False
+
+            current_position = get_joint_positions(self._limb)
+            current_velocity = get_joint_velocities(self._limb)
+
+
+            tag_pos = np.array(lookup_tag(tag)).reshape(-1)
+            current_workspace_position = np.array(kin.forward_position_kinematics()).reshape(-1)[:3]
+            distance = np.linalg.norm(tag_pos - current_workspace_position)
+            total_time = distance / constant_velocity
+
+            path = LinearPath(limb, kin, total_time, tag_pos, num_way, start_pos=None)
+            robot_trajectory = path.to_robot_trajectory(num_way, type(self)!=PDWorkspaceVelocityController)
+
+            # Get the desired position, velocity, and effort
+            (
+                target_position, 
+                target_velocity, 
+                target_acceleration, 
+                current_index
+            ) = self.interpolate_path(robot_trajectory, 0.2 * total_time, 0)
+
+            # For plotting
+            if log:
+                times.append(t)
+                actual_positions.append(current_position)
+                actual_velocities.append(current_velocity)
+                target_positions.append(target_position)
+                target_velocities.append(target_velocity)
+
+            # Run controller
+            self.step_control(target_position, target_velocity, target_acceleration)
+
+            # Sleep for a bit (to let robot move)
+            r.sleep()
+
+            if current_index >= max_index:
+                self.stop_moving()
+                break
+        
+        if log:
+            self.plot_results(
+                times,
+                actual_positions, 
+                actual_velocities, 
+                target_positions, 
+                target_velocities
+            )
+        return True
 
 class FeedforwardJointVelocityController(Controller):
     def step_control(self, target_position, target_velocity, target_acceleration):
@@ -435,11 +616,41 @@ class PDWorkspaceVelocityController(Controller):
 
         Parameters
         ----------
-        target_position: 6x' ndarray of desired positions
-        target_velocity: 6x' ndarray of desired velocities
-        target_acceleration: 6x' ndarray of desired accelerations
+        target_position: 3x' ndarray of desired positions
+        target_velocity: 3x' ndarray of desired velocities
+        target_acceleration: 3x' ndarray of desired accelerations
         """
-        raise NotImplementedError
+        curr_workspace_pos_quat = self._kin.forward_position_kinematics()
+        curr_workspace_pos = curr_workspace_pos_quat[:3]
+        curr_workspace_quat = curr_workspace_pos_quat[3:]
+        curr_workspace_euler = tf.transformations.euler_from_quaternion(curr_workspace_quat)
+        curr_workspace_coord = np.hstack([curr_workspace_pos, curr_workspace_euler])
+
+        target_workspace_coord = np.hstack([target_position, tf.transformations.euler_from_quaternion([0, 1, 0, 0])])
+        
+        # curr_twist = self._kin.forward_velocity_kinematics()
+        # curr_twist_vel = np.array([curr_twist.vel.x(), curr_twist.vel.y(), curr_twist.vel.z()])
+        # curr_twist_rot = np.array([curr_twist.rot.x(), curr_twist.rot.y(), curr_twist.rot.z()])
+
+        curr_twist = np.array(get_workspace_velocities(self._limb, self._kin)).reshape(6)
+        curr_twist_vel = curr_twist[:3]
+        curr_twist_rot = curr_twist[3:]
+
+        print 'curr_twist_vel" {0}'.format(curr_twist_vel)
+        print 'curr_twist_rot" {0}'.format(curr_twist_rot)
+
+
+        curr_vel = np.hstack([curr_twist_vel, curr_twist_rot])
+
+        p_err = curr_workspace_coord - target_workspace_coord
+        v_err = curr_vel - np.hstack([target_velocity, np.zeros(3)])
+
+        
+        feedback = -self.Kv.dot(v_err) - self.Kp.dot(p_err) 
+        pd_control_workspace = np.hstack([target_velocity, np.zeros(3)]) + feedback
+        pd_control_jointspace = np.array(self._kin.jacobian_pseudo_inverse().dot(pd_control_workspace)).reshape(7)
+
+        self._limb.set_joint_velocities(joint_array_to_dict(pd_control_jointspace, self._limb))
 
 class PDJointVelocityController(Controller):
     """
@@ -477,7 +688,17 @@ class PDJointVelocityController(Controller):
         target_velocity: 7x' :obj:`numpy.ndarray` of desired velocities
         target_acceleration: 7x' :obj:`numpy.ndarray` of desired accelerations
         """
-        raise NotImplementedError
+        curr_joint_angles = np.array([self._limb.joint_angle(joint) for joint in self._limb.joint_names()]).reshape(7)
+        curr_joint_velocities = np.array([self._limb.joint_velocity(joint) for joint in self._limb.joint_names()]).reshape(7)
+
+        p_err = curr_joint_angles - target_position
+        v_err = curr_joint_velocities - target_velocity
+
+        feedback = -self.Kv.dot(v_err) - self.Kp.dot(p_err) 
+        pd_control_jointspace = target_velocity + feedback
+
+        self._limb.set_joint_velocities(joint_array_to_dict(pd_control_jointspace, self._limb))
+        
 
 class PDJointTorqueController(Controller):
     def __init__(self, limb, kin, Kp, Kv):
@@ -510,7 +731,35 @@ class PDJointTorqueController(Controller):
         target_velocity: 7x' :obj:`numpy.ndarray` of desired velocities
         target_acceleration: 7x' :obj:`numpy.ndarray` of desired accelerations
         """
-        raise NotImplementedError
+        
+        curr_joint_angles = np.array([self._limb.joint_angle(joint) for joint in self._limb.joint_names()]).reshape(7)
+        curr_joint_velocities = np.array([self._limb.joint_velocity(joint) for joint in self._limb.joint_names()]).reshape(7)
+
+        M = np.array(self._kin.inertia()).reshape((7, 7))
+        # C = self._kin.coriolis()
+        JT = np.array(self._kin.jacobian_transpose()).reshape((7, 6))
+        M_cartesian = np.array(self._kin.cart_inertia()).reshape((6, 6))
+        N = JT.dot(M_cartesian).dot(np.array([0., 0., -0.981, 0., 0., 0.]))
+
+        feedforward = M.dot(target_acceleration) + N # M.dot(target_acceleration) + C.dot(target_velocity) + N
+
+        # print 'M: {0}'.format(M)
+        # print 'N: {0}'.format(N)
+        print 'feedforward: {0}'.format(feedforward)
+
+
+        curr_joint_angles = np.array([self._limb.joint_angle(joint) for joint in self._limb.joint_names()]).reshape(7)
+        curr_joint_velocities = np.array([self._limb.joint_velocity(joint) for joint in self._limb.joint_names()]).reshape(7)
+
+        p_err = curr_joint_angles - target_position
+        v_err = curr_joint_velocities - target_velocity
+
+        feedback = -self.Kv.dot(v_err) - self.Kp.dot(p_err) 
+        pd_joint_torque_control = feedforward + feedback
+
+        # import pdb; pdb.set_trace()
+
+        self._limb.set_joint_torques(joint_array_to_dict(pd_joint_torque_control, self._limb))
 
 
 

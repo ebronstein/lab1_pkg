@@ -111,6 +111,9 @@ if __name__ == "__main__":
     parser.add_argument('-arm', '-a', type=str, default='left', help=
         'Options: left, right.  Default: left'
     )
+    parser.add_argument('-num_way', type=int, default=5, help=
+        'How many waypoints for the :obj:`moveit_msgs.msg.RobotTrajectory`.  Default: 300'
+    )
     parser.add_argument('-rate', type=int, default=200, help="""
         This specifies how many ms between loops.  It is important to use a rate
         and not a regular while loop because you want the loop to refresh at a
@@ -139,7 +142,10 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit()
     controller.follow_ar_tag(
-        args.ar_marker, 
+        args.ar_marker,
+        limb,
+        kin,
+        num_way=args.num_way, 
         rate=args.rate, 
         timeout=args.timeout, 
         log=args.log

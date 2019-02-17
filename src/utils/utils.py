@@ -7,6 +7,7 @@ Author: Chris Correa
 import numpy as np
 from math import sin, cos, atan2
 import itertools
+import matplotlib.pyplot as plt
 
 try:
     from geometry_msgs.msg._Point import Point
@@ -97,6 +98,10 @@ def get_joint_velocities(limb):
         joint velocities
     """
     return np.array([limb.joint_velocities()[joint_name] for joint_name in limb.joint_names()])
+
+def get_workspace_velocities(limb, kin):
+    joint_velocities = get_joint_velocities(limb)
+    return kin.jacobian().dot(joint_velocities)
 
 def vec(*args):
     """
@@ -293,3 +298,87 @@ def create_pose_stamped_from_pos_quat(pos, quat, frame_id):
     wpose.pose.orientation.z = quat[2]
     wpose.pose.orientation.w = quat[3]
     return wpose
+
+def linear_interpolation(start, end, num_way):
+    """
+    Parameters
+    ----------
+    start : (x, y, z) start point
+    end : (x, y, z) end point
+    num_way : int number of waypoints
+    """
+    increments = np.linspace(0., 1., num_way)
+    start = np.array(start)
+    end = np.array(end)
+    return np.array([(1. - inc) * start + inc * end for inc in increments])
+
+def linear_interpolation_two_points(start, end, fraction):
+    """
+    Linearly interpolate between start and end using fraction.
+    """
+    assert fraction >= 0 and fraction <= 1
+    return (1. - fraction) * start + fraction * end
+
+def plot_robot_trajectory(robot_traj):
+    points = robot_traj.joint_trajectory.points
+    positions = []
+    velocities = []
+    accelerations = []
+    for p in points:
+        positions.append(p.positions)
+        velocities.append(p.velocities)
+        accelerations.append(p.accelerations)
+
+
+    positions = np.array(positions).reshape((len(positions), len(positions[0])))
+    velocities = np.array(velocities).reshape((len(velocities), len(velocities[0])))
+    accelerations = np.array(accelerations).reshape((len(accelerations), len(accelerations[0])))
+
+    plt.figure()
+    for joint in range(7):
+        for i, (x_name, x) in enumerate(zip(['positions', 'velocities', 'accelerations'], [positions, velocities, accelerations])):
+            plt.subplot(x.shape[1], 3, 3*joint + i + 1)
+            plt.plot(np.arange(x.shape[0]) * (5. / x.shape[0]), x[:,joint].reshape(-1))
+            plt.xlabel('time')
+            plt.ylabel('joint {0}'.format(joint))
+
+    print "Close the plot window to continue"
+    # plt.legend()
+    plt.show()
+    # import pdb; pdb.set_trace()
+
+def lookup_tag(tag_number):
+    """
+    Given an AR tag number, this returns the position of the AR tag in the robot's base frame.
+    You can use either this function or try starting the scripts/tag_pub.py script.  More info
+    about that script is in that file.  
+
+    Parameters
+    ----------
+    tag_number : int
+
+    Returns
+    -------
+    3x' :obj:`numpy.ndarray`
+        tag position
+    """
+    listener = tf.TransformListener()
+    from_frame = 'base'
+    to_frame = 'ar_marker_{}'.format(tag_number)
+
+    r = rospy.Rate(200)
+    while (
+        not listener.frameExists(from_frame) or not listener.frameExists(to_frame)
+    ) and (
+        not rospy.is_shutdown()
+    ):
+        print 'Cannot find AR marker {}, retrying'.format(tag_number)
+        r.sleep()
+
+    print 'Found transformation to AR marker. Sleeping for a bit...'
+    for i in range(200 * 1):
+        r.sleep()
+
+    t = listener.getLatestCommonTime(from_frame, to_frame)
+    tag_pos, _ = listener.lookupTransform(from_frame, to_frame, t)
+    return vec(tag_pos)

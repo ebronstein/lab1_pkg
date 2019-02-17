@@ -11,6 +11,8 @@ from moveit_msgs.msg import OrientationConstraint, Constraints, CollisionObject
 from geometry_msgs.msg import PoseStamped
 from shape_msgs.msg import SolidPrimitive
 
+from utils.utils import *
+
 class PathPlanner(object):
     """
     Path Planning Functionality for Baxter/Sawyer
@@ -98,7 +100,7 @@ class PathPlanner(object):
 
         return plan
 
-    def plan_to_joint_pos(self, target_joints):
+    def plan_to_joint_pos(self, target_joints, limb):
         """
         Generates a plan given an target joint state
 
@@ -110,7 +112,14 @@ class PathPlanner(object):
         path: A moveit_msgs/RobotTrajectory path
         """
         self._group.set_start_state_to_current_state()
-        self._group.set_joint_value_target(target_joints)
+        # target_joints_dict = joint_array_to_dict(target_joints, limb)
+        for i in range(500):
+            try:
+                self._group.set_joint_value_target(target_joints)
+            except Exception as e:
+                print '{0}. Retrying...'.format(e)
+                continue
+            break
         return self._group.plan()
 
     def execute_plan(self, plan):
@@ -120,7 +129,8 @@ class PathPlanner(object):
         Inputs:
         plan: a moveit_msgs/RobotTrajectory plan
         """
-
+        # import pdb
+        # pdb.set_trace()
         return self._group.execute(plan, wait=True)
 
 

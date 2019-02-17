@@ -58,6 +58,6 @@ if __name__ == '__main__':
     parser.add_argument('-ar_marker', '-ar', nargs='+', required=True, help='the tag number')
     args = parser.parse_args()
     try:
-        tag_pub(args.tags)
+        tag_pub(args.ar_marker)
     except rospy.ROSInterruptException:
         pass
