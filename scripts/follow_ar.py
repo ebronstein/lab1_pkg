@@ -102,7 +102,7 @@ if __name__ == "__main__":
     You can also change the rate, timeout if you want
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-ar_marker', '-ar', type=float, default=1, help=
+    parser.add_argument('-ar_marker', '-ar', type=int, default=1, help=
         'Which AR marker to use.  Default: 1'
     )
     parser.add_argument('-controller_name', '-c', type=str, default='workspace', 
@@ -141,7 +141,7 @@ if __name__ == "__main__":
         raw_input('Press <Enter> to execute the trajectory using YOUR OWN controller')
     except KeyboardInterrupt:
         sys.exit()
-    controller.follow_ar_tag(
+    controller.follow_ar_tag_step(
         args.ar_marker,
         limb,
         kin,

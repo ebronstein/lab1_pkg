@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 # Lab imports
 from utils.utils import *
+from paths.paths import *
 
 # ROS imports
 try:
@@ -395,7 +396,7 @@ class Controller:
             target_velocities = list()
 
         # For interpolation
-        max_index = len(path.joint_trajectory.points)-1
+        # max_index = len(path.joint_trajectory.points)-1
         current_index = 0
 
         # For timing
@@ -405,8 +406,8 @@ class Controller:
         # plot_robot_trajectory(path)
         step_fraction = 0.05
         target_time = rate / 1000. # time in seconds
-        target_velocity = step_fraction / target_time
-        target_acceleration = 0.05
+        target_velocity = step_fraction / target_time * np.ones(3)
+        target_acceleration = 0.05 * np.ones(3)
 
         while not rospy.is_shutdown():
             # Find the time from start
@@ -430,11 +431,15 @@ class Controller:
             # ) = self.interpolate_path(path, t, current_index)
 
             tag_pos = np.array(lookup_tag(tag)).reshape(-1)
+            tag_pos[2] += 0.15
             current_workspace_position = np.array(kin.forward_position_kinematics()).reshape(-1)[:3]
             direction = tag_pos - current_workspace_position
             direction = direction / np.linalg.norm(direction)
 
-            target_position = current_position + step_fraction * direction
+            target_position = current_workspace_position + step_fraction * direction
+
+            # if type(self) != PDWorkspaceVelocityController:
+            #     kin.get_ik
             
             # For plotting
             if log:
@@ -450,9 +455,9 @@ class Controller:
             # Sleep for a bit (to let robot move)
             r.sleep()
 
-            if current_index >= max_index:
-                self.stop_moving()
-                break
+            # if current_index >= max_index:
+            #     self.stop_moving()
+            #     break
         
         if log:
             self.plot_results(
@@ -498,7 +503,7 @@ class Controller:
             target_velocities = list()
 
         # For interpolation
-        max_index = len(path.joint_trajectory.points)-1
+        # max_index = len(path.joint_trajectory.points)-1
         current_index = 0
 
         # For timing
@@ -536,6 +541,7 @@ class Controller:
                 target_acceleration, 
                 current_index
             ) = self.interpolate_path(robot_trajectory, 0.2 * total_time, 0)
+            target_position[2] += 0.2
 
             # For plotting
             if log:
@@ -551,9 +557,9 @@ class Controller:
             # Sleep for a bit (to let robot move)
             r.sleep()
 
-            if current_index >= max_index:
-                self.stop_moving()
-                break
+            # if current_index >= max_index:
+            #     self.stop_moving()
+            #     break
         
         if log:
             self.plot_results(

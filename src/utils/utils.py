@@ -10,6 +10,8 @@ import itertools
 import matplotlib.pyplot as plt
 
 try:
+    import rospy
+    import tf
     from geometry_msgs.msg._Point import Point
     import tf.transformations as tfs
     from geometry_msgs.msg import Pose, PoseStamped
@@ -376,7 +378,7 @@ def lookup_tag(tag_number):
         r.sleep()
 
     print 'Found transformation to AR marker. Sleeping for a bit...'
-    for i in range(200 * 1):
+    for i in range(200):
         r.sleep()
 
     t = listener.getLatestCommonTime(from_frame, to_frame)

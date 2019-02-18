@@ -42,7 +42,7 @@ class MotionPath:
         end_index = min(start_index + 1, num_way - 1)
         start_point = points[start_index]
         end_point = points[end_index]
-        fraction = time % dt
+        fraction = float(time % dt) / dt
         return linear_interpolation_two_points(start_point, end_point, fraction).reshape(3)
 
     def target_position(self, time):
@@ -278,7 +278,7 @@ class LinearPath(MotionPath):
         self.base_frame = 'base'
         self.tool_frame = 'left_hand_camera' # 'left_gripper'
         self.plan_path()
-        self.plot_path()
+        # self.plot_path()
 
     def plan_path(self):
         if self.start_pos is None:
